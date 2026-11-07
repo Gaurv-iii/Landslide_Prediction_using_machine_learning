@@ -1,6 +1,8 @@
-import { useState } from "react";
+
+import { useEffect, useState } from "react";
 
 const API_URL = "http://127.0.0.1:8000/predict";
+const PERFORMANCE_API_URL = "http://127.0.0.1:8000/model-performance";
 
 const districts = [
   "Almora",
@@ -38,6 +40,49 @@ function Prediction() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [performanceData, setPerformanceData] = useState([]);
+  const [performanceLoading, setPerformanceLoading] = useState(true);
+  const [performanceError, setPerformanceError] = useState("");
+
+  // Fetch model performance from FastAPI
+  useEffect(() => {
+    let isActive = true;
+
+    async function fetchModelPerformance() {
+      try {
+        const response = await fetch(PERFORMANCE_API_URL);
+
+        if (!response.ok) {
+          throw new Error("Unable to load model performance.");
+        }
+
+        const data = await response.json();
+
+        if (!Array.isArray(data)) {
+          throw new Error("Invalid model performance data.");
+        }
+
+        if (isActive) {
+          setPerformanceData(data);
+        }
+      } catch (err) {
+        if (isActive) {
+          setPerformanceError(err.message);
+        }
+      } finally {
+        if (isActive) {
+          setPerformanceLoading(false);
+        }
+      }
+    }
+
+    fetchModelPerformance();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   function handleChange(event) {
     const { name, value } = event.target;
 
@@ -49,6 +94,7 @@ function Prediction() {
     setError("");
   }
 
+  // Submit prediction request
   async function handleSubmit(event) {
     event.preventDefault();
 
@@ -57,8 +103,6 @@ function Prediction() {
     setLoading(true);
 
     try {
-      // Convert the selected soil type into the three
-      // indicator columns expected by the trained models.
       const soilType = formData.soilType;
 
       const payload = {
@@ -100,7 +144,8 @@ function Prediction() {
       setError(
         err instanceof TypeError
           ? "Could not connect to the prediction API. Check that FastAPI is running at http://127.0.0.1:8000 and that CORS is configured."
-          : err.message || "Something went wrong while generating the prediction."
+          : err.message ||
+              "Something went wrong while generating the prediction."
       );
     } finally {
       setLoading(false);
@@ -123,6 +168,7 @@ function Prediction() {
           classifications from the trained machine learning models.
         </p>
 
+        {/* Prediction Form */}
         <form
           onSubmit={handleSubmit}
           className="mt-10 rounded-2xl bg-white p-8 shadow"
@@ -290,6 +336,7 @@ function Prediction() {
           </button>
         </form>
 
+        {/* Prediction Error */}
         {error && (
           <div
             role="alert"
@@ -300,6 +347,7 @@ function Prediction() {
           </div>
         )}
 
+        {/* Prediction Results */}
         {result && (
           <section
             aria-live="polite"
@@ -325,13 +373,20 @@ function Prediction() {
               />
             </div>
 
-            <div className="mt-6 rounded-xl bg-amber-50 p-5 text-sm text-amber-900">
+          { /* <div className="mt-6 rounded-xl bg-amber-50 p-5 text-sm text-amber-900">
               <h3 className="font-semibold">Important limitation</h3>
               <p className="mt-2">
                 {result.note ||
                   "These predictions are experimental model classifications and are not validated real-world landslide warnings."}
               </p>
-            </div>
+            </div>*/}
+
+            {/* Model Performance Below Prediction Output */}
+            <ModelPerformance
+              data={performanceData}
+              loading={performanceLoading}
+              error={performanceError}
+            />
           </section>
         )}
 
@@ -351,6 +406,7 @@ function Prediction() {
   );
 }
 
+// Individual Model Prediction Card
 function ModelResult({ title, model }) {
   if (!model) {
     return (
@@ -391,6 +447,108 @@ function ModelResult({ title, model }) {
   );
 }
 
+// Model Performance Comparison Table
+function ModelPerformance({ data, loading, error }) {
+  const metrics = [
+    "Accuracy",
+    "Precision",
+    "Recall",
+    "F1-Score",
+    "ROC-AUC",
+  ];
+
+  function formatMetric(value) {
+    if (typeof value !== "number") {
+      return "N/A";
+    }
+
+    return `${(value * 100).toFixed(1)}%`;
+  }
+
+  return (
+    <section className="mt-8 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+      <p className="text-sm font-semibold uppercase tracking-widest text-[#D77A5D]">
+        Machine Learning Evaluation
+      </p>
+
+      <h2 className="mt-2 text-2xl font-bold text-[#173D2A]">
+        Model Performance Comparison
+      </h2>
+
+      <p className="mt-3 text-sm text-gray-600">
+        Evaluation metrics of both trained models on the test dataset.
+      </p>
+
+      {loading && (
+        <p className="mt-6 text-gray-500">
+          Loading model performance...
+        </p>
+      )}
+
+      {error && (
+        <div className="mt-6 rounded-lg bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && data.length > 0 && (
+        <div className="mt-6 overflow-x-auto">
+          <table className="w-full min-w-[600px] border-collapse text-left">
+            <thead>
+              <tr className="bg-[#173D2A] text-white">
+                <th className="px-5 py-4">Model</th>
+
+                {metrics.map((metric) => (
+                  <th key={metric} className="px-5 py-4 text-center">
+                    {metric}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {data.map((model, index) => (
+                <tr
+                  key={model.Model}
+                  className={
+                    index % 2 === 0 ? "bg-[#F8F7F4]" : "bg-white"
+                  }
+                >
+                  <td className="border-b border-gray-200 px-5 py-4 font-semibold text-[#173D2A]">
+                    {model.Model}
+                  </td>
+
+                  {metrics.map((metric) => (
+                    <td
+                      key={metric}
+                      className="border-b border-gray-200 px-5 py-4 text-center font-medium text-gray-700"
+                    >
+                      {formatMetric(model[metric])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!loading && !error && data.length === 0 && (
+        <p className="mt-6 text-gray-500">
+          No model performance data is available.
+        </p>
+      )}
+
+      <div className="mt-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
+        <strong>Note:</strong> These metrics represent evaluation on the
+        available test dataset. Perfect scores do not establish
+        real-world landslide prediction accuracy.
+      </div>
+    </section>
+  );
+}
+
+// Reusable Input Field
 function InputField({
   name,
   label,
