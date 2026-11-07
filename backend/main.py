@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import joblib
 import pandas as pd
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 # Locate the project and saved models
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODEL_DIR = PROJECT_ROOT / "ml" / "models"
+METRICS_PATH = MODEL_DIR / "model_metrics.json"
 
 LOGISTIC_MODEL_PATH = MODEL_DIR / "logistic_regression.pkl"
 RANDOM_FOREST_PATH = MODEL_DIR / "random_forest.pkl"
@@ -121,6 +123,28 @@ def health():
         "models_loaded": True,
     }
 
+@app.get("/model-performance")
+def get_model_performance():
+
+    if not METRICS_PATH.exists():
+        return {
+            "error": "Model metrics file not found."
+        }
+
+    with open(METRICS_PATH, "r") as file:
+        metrics = json.load(file)
+
+    # Handle both possible JSON formats
+    if isinstance(metrics, list):
+        return metrics
+
+    if isinstance(metrics, dict):
+        return metrics.get("original_features", [])
+
+    return {
+        "error": "Invalid model metrics format."
+    }
+
 
 @app.post("/predict")
 def predict_landslide(data: LandslideInput):
@@ -159,3 +183,4 @@ def predict_landslide(data: LandslideInput):
             "dataset, not validated real-world landslide warnings."
         ),
     }
+
